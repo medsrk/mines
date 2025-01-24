@@ -2,7 +2,10 @@ module mines
 
 go 1.23
 
-require github.com/hajimehoshi/ebiten/v2 v2.8.6
+require (
+	github.com/hajimehoshi/ebiten/v2 v2.8.6
+	golang.org/x/image v0.21.0
+)
 
 require (
 	github.com/ebitengine/gomobile v0.0.0-20241016134836-cc2e38a7c0ee // indirect

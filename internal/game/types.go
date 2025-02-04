@@ -13,7 +13,6 @@ const (
 	StateRevealed
 	StateRevealing
 	StateFlagged
-	StateQuestion
 )
 
 type CellContent int

@@ -1,10 +1,10 @@
 package renderer
 
 import (
+	"fmt"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"image/color"
@@ -17,13 +17,20 @@ type EbitenRenderer struct {
 	game     game.Game
 	cellSize int
 	font     font.Face
+	sprites  *Sprites
 }
 
 func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
+	sprites, err := LoadSprites()
+	if err != nil {
+		panic(fmt.Sprintf("failed to load sprites: %v", err))
+	}
+
 	return &EbitenRenderer{
 		game:     g,
 		cellSize: cellSize,
 		font:     basicfont.Face7x13,
+		sprites:  sprites,
 	}
 }
 
@@ -92,15 +99,18 @@ func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position) {
 	centerY := y + size/2
 	x = centerX - (size*scale)/2
 	y = centerY - (size*scale)/2
-	size *= scale
+
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(float64(scale), float64(scale))
+	op.GeoM.Translate(float64(x), float64(y))
 
 	switch state {
 	case game.StateHidden, game.StateRevealing:
-		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{127, 127, 127, 255}, true)
+		screen.DrawImage(r.sprites.hidden, op)
 	case game.StateRevealed:
-		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{61, 61, 61, 255}, true)
+		screen.DrawImage(r.sprites.revealed, op)
 		if r.game.GetCellContent(pos) == game.ContentMine {
-			vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{255, 0, 0, 255}, true)
+			screen.DrawImage(r.sprites.mine, op)
 		} else {
 			mineCount := r.game.GetAdjacentMines(pos)
 			if mineCount > 0 {
@@ -114,11 +124,9 @@ func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position) {
 			}
 		}
 	case game.StateFlagged:
-		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{0, 0, 255, 255}, true)
-	case game.StateQuestion:
-		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{255, 255, 0, 255}, true)
+		screen.DrawImage(r.sprites.hidden, op)
+		screen.DrawImage(r.sprites.flag, op)
 	}
-	vector.StrokeRect(screen, x, y, size, size, 1, color.Black, true)
 }
 
 var numberColours = []color.Color{

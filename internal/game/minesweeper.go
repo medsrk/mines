@@ -36,8 +36,6 @@ func (ms *Minesweeper) HandleRightClick(p Position) {
 		switch posState {
 		case StateHidden:
 			ms.grid.states[p.X][p.Y] = StateFlagged
-		case StateFlagged:
-			ms.grid.states[p.X][p.Y] = StateQuestion
 		default:
 			ms.grid.states[p.X][p.Y] = StateHidden
 		}

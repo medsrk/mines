@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	g := game.NewMinesweeper(50, 50, 500)
+	g := game.NewMinesweeper(16, 16, 40)
 	r := renderer.NewEbitenRenderer(g, 32)
 
 	ebiten.SetWindowSize(1280, 720)

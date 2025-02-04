@@ -1,21 +1,26 @@
 package game
 
 import (
+	"iter"
+	"math"
 	"math/rand"
+	"time"
 )
 
 type Grid struct {
 	width, height int
 	mines         map[Position]struct{}
 	states        [][]CellState
+	animations    map[Position]Animation
 }
 
 func NewGrid(width, height int) *Grid {
 	g := &Grid{
-		width:  width,
-		height: height,
-		mines:  make(map[Position]struct{}),
-		states: make([][]CellState, width),
+		width:      width,
+		height:     height,
+		mines:      make(map[Position]struct{}),
+		states:     make([][]CellState, width),
+		animations: make(map[Position]Animation),
 	}
 
 	for i := 0; i < width; i++ {
@@ -26,15 +31,25 @@ func NewGrid(width, height int) *Grid {
 }
 
 func (g *Grid) PlaceMines(count int, exclude Position) {
-	available := make([]Position, 0, g.width*g.height)
+	excluded := make(map[Position]struct{})
+	excluded[exclude] = struct{}{}
 
+	for neighbor := range exclude.Neighbors(g.width, g.height) {
+		excluded[neighbor] = struct{}{}
+	}
+
+	available := make([]Position, 0, g.width*g.height-len(excluded))
 	for x := 0; x < g.width; x++ {
 		for y := 0; y < g.height; y++ {
 			pos := Position{x, y}
-			if pos != exclude {
+			if _, isExcluded := excluded[pos]; !isExcluded {
 				available = append(available, pos)
 			}
 		}
+	}
+
+	if count > len(available) {
+		count = len(available)
 	}
 
 	rand.Shuffle(len(available), func(i, j int) {
@@ -49,45 +64,81 @@ func (g *Grid) PlaceMines(count int, exclude Position) {
 
 func (g *Grid) GetAdjacentMines(p Position) int {
 	count := 0
-	for dx := -1; dx <= 1; dx++ {
-		for dy := -1; dy <= 1; dy++ {
-			if dx == 0 && dy == 0 {
-				continue
-			}
-
-			nx, ny := p.X+dx, p.Y+dy
-			if nx < 0 || nx >= g.width || ny < 0 || ny >= g.height {
-				continue
-			}
-
-			if _, isMine := g.mines[Position{nx, ny}]; isMine {
-				count++
-			}
+	for neighbor := range p.Neighbors(g.width, g.height) {
+		if _, isMine := g.mines[neighbor]; isMine {
+			count++
 		}
 	}
 	return count
 }
 
-func (g *Grid) Reveal(p Position) {
-	if _, isMine := g.mines[p]; isMine {
-		g.states[p.X][p.Y] = StateRevealed
-		return
-	}
+const (
+	RevealDelay   = 30 * time.Millisecond // Delay between each cascade level
+	RevealAnimate = 20 * time.Millisecond // How long each cell animates for
+)
+
+func (g *Grid) Reveal(p Position, clickPos Position) []Position {
+	var revealed []Position
 
 	if g.states[p.X][p.Y] != StateHidden {
-		return
+		return revealed
 	}
 
-	g.states[p.X][p.Y] = StateRevealed
+	distance := math.Abs(float64(p.X-clickPos.X)) + math.Abs(float64(p.Y-clickPos.Y))
+	delay := time.Duration(distance) * RevealDelay
 
-	if g.GetAdjacentMines(p) == 0 {
-		for dx := -1; dx <= 1; dx++ {
-			for dy := -1; dy <= 1; dy++ {
-				nx, ny := p.X+dx, p.Y+dy
-				if nx >= 0 && nx < g.width && ny >= 0 && ny < g.height {
-					g.Reveal(Position{nx, ny})
+	g.states[p.X][p.Y] = StateRevealing
+	g.animations[p] = Animation{
+		StartTime: time.Now().Add(delay),
+		Duration:  RevealAnimate,
+	}
+	revealed = append(revealed, p)
+
+	// If empty cell, cascade to neighbors
+	if _, isMine := g.mines[p]; !isMine && g.GetAdjacentMines(p) == 0 {
+		for neighbor := range p.Neighbors(g.width, g.height) {
+			if _, isMine := g.mines[neighbor]; !isMine {
+				revealedNeighbors := g.Reveal(neighbor, clickPos)
+				revealed = append(revealed, revealedNeighbors...)
+			}
+		}
+	}
+
+	return revealed
+}
+
+func (p Position) Neighbors(width, height int) iter.Seq[Position] {
+	return func(yield func(Position) bool) {
+		deltas := []struct{ dx, dy int }{
+			{-1, -1}, {-1, 0}, {-1, 1},
+			{0, -1}, {0, 1},
+			{1, -1}, {1, 0}, {1, 1},
+		}
+
+		for _, d := range deltas {
+			nx, ny := p.X+d.dx, p.Y+d.dy
+			if nx >= 0 && nx < width && ny >= 0 && ny < height {
+				if !yield(Position{nx, ny}) {
+					return
 				}
 			}
 		}
 	}
+}
+
+func (g *Grid) Update() {
+	now := time.Now()
+	for pos, anim := range g.animations {
+		if now.Sub(anim.StartTime) >= anim.Duration {
+			delete(g.animations, pos)
+			if g.states[pos.X][pos.Y] == StateRevealing {
+				g.states[pos.X][pos.Y] = StateRevealed
+			}
+		}
+	}
+}
+
+func (g *Grid) GetAnimation(p Position) (Animation, bool) {
+	anim, exists := g.animations[p]
+	return anim, exists
 }

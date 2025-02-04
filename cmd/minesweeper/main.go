@@ -7,10 +7,10 @@ import (
 )
 
 func main() {
-	g := game.NewMinesweeper(20, 20)
+	g := game.NewMinesweeper(50, 50, 500)
 	r := renderer.NewEbitenRenderer(g, 32)
 
-	ebiten.SetWindowSize(800, 600)
+	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowTitle("Minesweeper")
 	if err := ebiten.RunGame(r); err != nil {
 		panic(err)

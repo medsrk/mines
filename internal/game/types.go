@@ -1,5 +1,7 @@
 package game
 
+import "time"
+
 type Position struct {
 	X, Y int
 }
@@ -9,6 +11,7 @@ type CellState int
 const (
 	StateHidden CellState = iota
 	StateRevealed
+	StateRevealing
 	StateFlagged
 	StateQuestion
 )
@@ -33,6 +36,22 @@ type Game interface {
 	GetAdjacentMines(Position) int
 	GameState() GameState
 
-	HandleLeftClick(Position)
+	HandleLeftClick(Position) []Position
 	HandleRightClick(Position)
+
+	Update()
+	Grid() *Grid
+}
+
+type AnimationType int
+
+const (
+	AnimationReveal AnimationType = iota
+	AnimationFlag
+)
+
+type Animation struct {
+	Type      AnimationType
+	StartTime time.Time
+	Duration  time.Duration
 }

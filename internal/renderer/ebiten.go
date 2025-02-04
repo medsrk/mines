@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"mines/internal/game"
 	"strconv"
+	"time"
 )
 
 type EbitenRenderer struct {
@@ -27,7 +28,7 @@ func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
 }
 
 func (r *EbitenRenderer) Update() error {
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+	if inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft) {
 		x, y := ebiten.CursorPosition()
 		pos := game.Position{
 			X: x / r.cellSize,
@@ -47,6 +48,9 @@ func (r *EbitenRenderer) Update() error {
 			r.game.HandleRightClick(pos)
 		}
 	}
+
+	r.game.Update()
+
 	return nil
 }
 
@@ -65,16 +69,36 @@ func (r *EbitenRenderer) Layout(w, h int) (int, int) {
 }
 
 func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position) {
+	scale := float32(1.0)
+	state := r.game.GetCellState(pos)
+
+	if state == game.StateRevealing {
+		if anim, exists := r.game.Grid().GetAnimation(pos); exists {
+			elapsed := time.Since(anim.StartTime)
+			if elapsed >= 0 {
+				progress := float64(elapsed) / float64(anim.Duration)
+				if progress < 1.0 {
+					scale = float32(0.5 + 0.5*progress)
+				}
+			}
+		}
+	}
+
 	x := float32(pos.X * r.cellSize)
 	y := float32(pos.Y * r.cellSize)
 	size := float32(r.cellSize)
 
-	switch r.game.GetCellState(pos) {
-	case game.StateHidden:
-		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{200, 200, 200, 255}, true)
-	case game.StateRevealed:
-		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{150, 150, 150, 255}, true)
+	centerX := x + size/2
+	centerY := y + size/2
+	x = centerX - (size*scale)/2
+	y = centerY - (size*scale)/2
+	size *= scale
 
+	switch state {
+	case game.StateHidden, game.StateRevealing:
+		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{127, 127, 127, 255}, true)
+	case game.StateRevealed:
+		vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{61, 61, 61, 255}, true)
 		if r.game.GetCellContent(pos) == game.ContentMine {
 			vector.DrawFilledRect(screen, x, y, size, size, color.RGBA{255, 0, 0, 255}, true)
 		} else {
@@ -82,11 +106,8 @@ func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position) {
 			if mineCount > 0 {
 				numberStr := strconv.Itoa(mineCount)
 				bounds, _ := font.BoundString(r.font, numberStr)
-
-				// The bounds are in 26.6 fixed-point format, we need to convert to regular integers
 				width := (bounds.Max.X - bounds.Min.X).Ceil()
 				height := (bounds.Max.Y - bounds.Min.Y).Ceil()
-
 				textX := int(x) + (r.cellSize-width)/2
 				textY := int(y) + (r.cellSize+height)/2
 				text.Draw(screen, numberStr, r.font, textX, textY, numberColours[mineCount])
@@ -101,11 +122,11 @@ func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position) {
 }
 
 var numberColours = []color.Color{
-	color.RGBA{128, 128, 128, 255}, // 0 - grey, though we won't use it
-	color.RGBA{0, 0, 255, 255},     // 1 - blue
-	color.RGBA{0, 128, 0, 255},     // 2 - green
-	color.RGBA{255, 0, 0, 255},     // 3 - red
-	color.RGBA{0, 0, 128, 255},     // 4 - dark blue
+	color.RGBA{128, 128, 128, 255}, // 0 - grey
+	color.RGBA{255, 255, 255, 255}, // 1 - white
+	color.RGBA{118, 253, 75, 255},  // 2 - green
+	color.RGBA{255, 255, 85, 255},  // 3 - yellow
+	color.RGBA{255, 0, 0, 255},     // 4 - red
 	color.RGBA{128, 0, 0, 255},     // 5 - dark red
 	color.RGBA{0, 128, 128, 255},   // 6 - teal
 	color.RGBA{0, 0, 0, 255},       // 7 - black

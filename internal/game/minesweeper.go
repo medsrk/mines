@@ -1,5 +1,7 @@
 package game
 
+import "time"
+
 type Minesweeper struct {
 	grid      *Grid
 	gameState GameState
@@ -10,10 +12,17 @@ func NewMinesweeper(width, height, mineCount int) *Minesweeper {
 	return &Minesweeper{
 		grid:      NewGrid(width, height),
 		mineCount: mineCount,
+		gameState: GameState{
+			StartTime: time.Now(),
+		},
 	}
 }
 
 func (ms *Minesweeper) HandleLeftClick(p Position) []Position {
+	if ms.gameState.IsGameOver || ms.gameState.HasWon {
+		return nil
+	}
+	
 	if len(ms.grid.mines) == 0 {
 		ms.grid.PlaceMines(ms.mineCount, p)
 	}
@@ -35,15 +44,24 @@ func (ms *Minesweeper) HandleRightClick(p Position) {
 		}
 		switch posState {
 		case StateHidden:
-			ms.grid.states[p.X][p.Y] = StateFlagged
+			ms.grid.ToggleFlag(p)
 		default:
-			ms.grid.states[p.X][p.Y] = StateHidden
+			if ms.grid.states[p.X][p.Y] == StateFlagged {
+				ms.grid.ToggleFlag(p)
+			}
 		}
 	}
 }
 
 func (ms *Minesweeper) Update() {
 	ms.grid.Update()
+	if !ms.gameState.IsGameOver && !ms.gameState.StartTime.IsZero() {
+		ms.gameState.ElapsedTime = time.Since(ms.gameState.StartTime)
+	}
+	if ms.grid.CheckHasWon() {
+		ms.gameState.HasWon = true
+		ms.gameState.IsGameOver = true
+	}
 }
 
 func (ms *Minesweeper) Width() int { return ms.grid.width }
@@ -64,3 +82,7 @@ func (ms *Minesweeper) GetAdjacentMines(p Position) int { return ms.grid.GetAdja
 func (ms *Minesweeper) GameState() GameState { return ms.gameState }
 
 func (ms *Minesweeper) Grid() *Grid { return ms.grid }
+
+func (ms *Minesweeper) MineCount() int { return ms.mineCount }
+
+func (ms *Minesweeper) FlagCount() int { return len(ms.grid.flags) }

@@ -23,8 +23,10 @@ const (
 )
 
 type GameState struct {
-	IsGameOver bool
-	HasWon     bool
+	IsGameOver  bool
+	HasWon      bool
+	StartTime   time.Time
+	ElapsedTime time.Duration
 }
 
 type Game interface {
@@ -40,6 +42,8 @@ type Game interface {
 
 	Update()
 	Grid() *Grid
+	MineCount() int
+	FlagCount() int
 }
 
 type AnimationType int

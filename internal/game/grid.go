@@ -10,6 +10,7 @@ import (
 type Grid struct {
 	width, height int
 	mines         map[Position]struct{}
+	flags         map[Position]struct{}
 	states        [][]CellState
 	animations    map[Position]Animation
 }
@@ -19,6 +20,7 @@ func NewGrid(width, height int) *Grid {
 		width:      width,
 		height:     height,
 		mines:      make(map[Position]struct{}),
+		flags:      make(map[Position]struct{}),
 		states:     make([][]CellState, width),
 		animations: make(map[Position]Animation),
 	}
@@ -80,6 +82,31 @@ const (
 func (g *Grid) Reveal(p Position, clickPos Position) []Position {
 	var revealed []Position
 
+	// If already revealed and has adjacent mines, try to chord
+	if g.states[p.X][p.Y] == StateRevealed {
+		adjacentMines := g.GetAdjacentMines(p)
+		if adjacentMines > 0 {
+			// Count adjacent flags
+			flagCount := 0
+			for neighbor := range p.Neighbors(g.width, g.height) {
+				if g.states[neighbor.X][neighbor.Y] == StateFlagged {
+					flagCount++
+				}
+			}
+
+			// If flag count matches, reveal non-flagged neighbors
+			if flagCount == adjacentMines {
+				for neighbor := range p.Neighbors(g.width, g.height) {
+					if g.states[neighbor.X][neighbor.Y] != StateFlagged && g.states[neighbor.X][neighbor.Y] != StateRevealed {
+						neighborRevealed := g.Reveal(neighbor, clickPos)
+						revealed = append(revealed, neighborRevealed...)
+					}
+				}
+			}
+		}
+		return revealed
+	}
+
 	if g.states[p.X][p.Y] != StateHidden {
 		return revealed
 	}
@@ -105,6 +132,16 @@ func (g *Grid) Reveal(p Position, clickPos Position) []Position {
 	}
 
 	return revealed
+}
+
+func (g *Grid) ToggleFlag(p Position) {
+	if g.states[p.X][p.Y] == StateHidden {
+		g.flags[p] = struct{}{}
+		g.states[p.X][p.Y] = StateFlagged
+	} else if g.states[p.X][p.Y] == StateFlagged {
+		delete(g.flags, p)
+		g.states[p.X][p.Y] = StateHidden
+	}
 }
 
 func (p Position) Neighbors(width, height int) iter.Seq[Position] {
@@ -136,6 +173,25 @@ func (g *Grid) Update() {
 			}
 		}
 	}
+}
+
+func (g *Grid) CheckHasWon() bool {
+	for pos := range g.mines {
+		if g.states[pos.X][pos.Y] != StateFlagged {
+			return false
+		}
+	}
+
+	for x := 0; x < g.width; x++ {
+		for y := 0; y < g.height; y++ {
+			pos := Position{x, y}
+			if _, isMine := g.mines[pos]; !isMine && g.states[x][y] != StateRevealed {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func (g *Grid) GetAnimation(p Position) (Animation, bool) {

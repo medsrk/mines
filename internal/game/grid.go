@@ -86,7 +86,6 @@ func (g *Grid) Reveal(p Position, clickPos Position) []Position {
 	if g.states[p.X][p.Y] == StateRevealed {
 		adjacentMines := g.GetAdjacentMines(p)
 		if adjacentMines > 0 {
-			// Count adjacent flags
 			flagCount := 0
 			for neighbor := range p.Neighbors(g.width, g.height) {
 				if g.states[neighbor.X][neighbor.Y] == StateFlagged {
@@ -163,16 +162,19 @@ func (p Position) Neighbors(width, height int) iter.Seq[Position] {
 	}
 }
 
-func (g *Grid) Update() {
+func (g *Grid) Update() []Position {
+	var justFullyRevealed []Position
 	now := time.Now()
 	for pos, anim := range g.animations {
 		if now.Sub(anim.StartTime) >= anim.Duration {
 			delete(g.animations, pos)
 			if g.states[pos.X][pos.Y] == StateRevealing {
 				g.states[pos.X][pos.Y] = StateRevealed
+				justFullyRevealed = append(justFullyRevealed, pos)
 			}
 		}
 	}
+	return justFullyRevealed
 }
 
 func (g *Grid) CheckHasWon() bool {

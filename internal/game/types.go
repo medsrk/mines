@@ -29,6 +29,14 @@ type GameState struct {
 	ElapsedTime time.Duration
 }
 
+type ClickResultType int
+
+const (
+	ResultNoOp   ClickResultType = iota
+	ResultReveal                 // Sound for initial reveal action
+	ResultExplosion
+)
+
 type Game interface {
 	Width() int
 	Height() int
@@ -37,24 +45,16 @@ type Game interface {
 	GetAdjacentMines(Position) int
 	GameState() GameState
 
-	HandleLeftClick(Position) []Position
-	HandleRightClick(Position)
+	HandleLeftClick(Position) ([]Position, ClickResultType)
+	HandleRightClick(Position) bool
 
-	Update()
+	Update() []Position
 	Grid() *Grid
 	MineCount() int
 	FlagCount() int
 }
 
-type AnimationType int
-
-const (
-	AnimationReveal AnimationType = iota
-	AnimationFlag
-)
-
 type Animation struct {
-	Type      AnimationType
 	StartTime time.Time
 	Duration  time.Duration
 }

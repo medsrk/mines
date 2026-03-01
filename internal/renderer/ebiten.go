@@ -1,13 +1,9 @@
 package renderer
 
 import (
-	"bytes"
 	"fmt"
 	"image/color"
-	"io"
-	"log"
 	"math"
-	"mines/assets"
 	"mines/internal/game"
 	"strconv"
 	"time"
@@ -15,8 +11,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/audio"
-	"github.com/hajimehoshi/ebiten/v2/audio/vorbis"
 	"github.com/hajimehoshi/ebiten/v2/text"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 	"golang.org/x/image/font"
@@ -65,61 +59,33 @@ type cellAnimation struct {
 	Duration  time.Duration
 }
 
+const longPressThreshold = 30 // ticks (0.5s at 60fps)
+
+type touchInfo struct {
+	pos      game.Position
+	consumed bool
+}
+
 type EbitenRenderer struct {
 	game      game.Game
 	cellSize  int
 	font      font.Face
 	sprites   *Sprites
+	audio     *Audio
 	transform ebiten.GeoM
 	menuState MenuState
 	menuItems []string
 
-	audioCtx           *audio.Context
-	tileRevealSound    *audio.Player
-	initialRevealSound *audio.Player
-	flagSound          *audio.Player
-	unflagSound        *audio.Player
-	explodeSound       *audio.Player
-	winSound           *audio.Player
-
 	animations map[game.Position]cellAnimation
+	touches    map[ebiten.TouchID]touchInfo
 
 	customWidth  int
 	customHeight int
 	customMines  int
 }
 
-func loadSound(audioCtx *audio.Context, path string) *audio.Player {
-	file, err := assets.FS.Open(path)
-	if err != nil {
-		log.Printf("Warning: loadSound: failed to open sound file %s: %v", path, err)
-		return nil
-	}
-	defer file.Close()
-
-	decodedStream, err := vorbis.DecodeWithSampleRate(audioCtx.SampleRate(), file)
-	if err != nil {
-		log.Printf("Warning: loadSound: failed to decode OGG sound file %s: %v", path, err)
-		return nil
-	}
-
-	var pcmBuffer bytes.Buffer
-	if _, err := io.Copy(&pcmBuffer, decodedStream); err != nil {
-		log.Printf("Warning: loadSound: failed to buffer decoded OGG stream for %s: %v", path, err)
-		return nil
-	}
-
-	pcmDataReader := bytes.NewReader(pcmBuffer.Bytes())
-	player, err := audioCtx.NewPlayer(pcmDataReader)
-	if err != nil {
-		log.Printf("Warning: loadSound: failed to create audio player for %s from buffered data: %v", path, err)
-		return nil
-	}
-	return player
-}
-
 func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
-	sprites, err := LoadSprites()
+	sprites, err := loadSprites()
 	if err != nil {
 		panic(fmt.Sprintf("failed to load sprites: %v", err))
 	}
@@ -132,31 +98,16 @@ func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
 		menuItems[i] = fmt.Sprintf("%s (%dx%d, %d mines)", d.Name, d.Width, d.Height, d.MineCount)
 	}
 
-	audioCtx := audio.NewContext(44100)
-
-	tileRevealSound := loadSound(audioCtx, "audio/reveal.ogg")
-	initialRevealSound := loadSound(audioCtx, "audio/click.ogg")
-	flagSound := loadSound(audioCtx, "audio/flag.ogg")
-	unflagSound := loadSound(audioCtx, "audio/unflag.ogg")
-	explodeSound := loadSound(audioCtx, "audio/explode.ogg")
-	winSound := loadSound(audioCtx, "audio/win.ogg")
-
 	return &EbitenRenderer{
-		game:               g,
-		cellSize:           cellSize,
-		font:               basicfont.Face7x13,
-		sprites:            sprites,
-		transform:          transform,
-		menuState:          MenuStateMain,
-		menuItems:          menuItems,
-		audioCtx:           audioCtx,
-		tileRevealSound:    tileRevealSound,
-		initialRevealSound: initialRevealSound,
-		flagSound:          flagSound,
-		unflagSound:        unflagSound,
-		explodeSound:       explodeSound,
-		winSound:           winSound,
-		animations:         make(map[game.Position]cellAnimation),
+		game:       g,
+		cellSize:   cellSize,
+		font:       basicfont.Face7x13,
+		sprites:    sprites,
+		audio:      loadAudio(),
+		transform:  transform,
+		menuState:  MenuStateMain,
+		menuItems:  menuItems,
+		animations: make(map[game.Position]cellAnimation),
 
 		customWidth:  10,
 		customHeight: 10,
@@ -259,14 +210,14 @@ func (r *EbitenRenderer) Update() error {
 				for _, event := range r.game.HandleLeftClick(pos) {
 					switch event.Type {
 					case game.EventExplosion:
-						if r.explodeSound != nil {
-							r.explodeSound.Rewind()
-							r.explodeSound.Play()
+						if r.audio.explodeSound != nil {
+							r.audio.explodeSound.Rewind()
+							r.audio.explodeSound.Play()
 						}
 					case game.EventReveal:
-						if r.initialRevealSound != nil {
-							r.initialRevealSound.Rewind()
-							r.initialRevealSound.Play()
+						if r.audio.initialRevealSound != nil {
+							r.audio.initialRevealSound.Rewind()
+							r.audio.initialRevealSound.Play()
 						}
 						for _, revealedPos := range event.Positions {
 							dist := math.Abs(float64(revealedPos.X-pos.X)) + math.Abs(float64(revealedPos.Y-pos.Y))
@@ -285,15 +236,15 @@ func (r *EbitenRenderer) Update() error {
 				for _, event := range r.game.HandleRightClick(pos) {
 					switch event.Type {
 					case game.EventFlagged:
-						if r.flagSound != nil {
-							r.flagSound.Rewind()
-							r.flagSound.Play()
+						if r.audio.flagSound != nil {
+							r.audio.flagSound.Rewind()
+							r.audio.flagSound.Play()
 						}
 
 					case game.EventUnflagged:
-						if r.unflagSound != nil {
-							r.unflagSound.Rewind()
-							r.unflagSound.Play()
+						if r.audio.unflagSound != nil {
+							r.audio.unflagSound.Rewind()
+							r.audio.unflagSound.Play()
 						}
 					}
 				}
@@ -303,9 +254,9 @@ func (r *EbitenRenderer) Update() error {
 	for _, event := range r.game.Update() {
 		switch event.Type {
 		case game.EventWon:
-			if r.winSound != nil {
-				r.winSound.Rewind()
-				r.winSound.Play()
+			if r.audio.winSound != nil {
+				r.audio.winSound.Rewind()
+				r.audio.winSound.Play()
 			}
 		}
 	}
@@ -313,9 +264,9 @@ func (r *EbitenRenderer) Update() error {
 	for p, anim := range r.animations {
 		if now.Sub(anim.StartTime) >= anim.Duration {
 			delete(r.animations, p)
-			if r.tileRevealSound != nil {
-				r.tileRevealSound.Rewind()
-				r.tileRevealSound.Play()
+			if r.audio.tileRevealSound != nil {
+				r.audio.tileRevealSound.Rewind()
+				r.audio.tileRevealSound.Play()
 			}
 		}
 	}

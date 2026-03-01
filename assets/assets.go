@@ -2,5 +2,5 @@ package assets
 
 import "embed"
 
-//go:embed *.png audio/*.ogg
+//go:embed images/*.png audio/*.ogg
 var FS embed.FS

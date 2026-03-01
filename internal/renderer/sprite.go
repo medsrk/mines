@@ -14,24 +14,24 @@ type Sprites struct {
 	mine     *ebiten.Image
 }
 
-func LoadSprites() (*Sprites, error) {
+func loadSprites() (*Sprites, error) {
 	// load image from file
-	hidden, err := loadImage("hidden.png")
+	hidden, err := loadImage("images/hidden.png")
 	if err != nil {
 		return nil, err
 	}
 
-	revealed, err := loadImage("revealed.png")
+	revealed, err := loadImage("images/revealed.png")
 	if err != nil {
 		return nil, err
 	}
 
-	flag, err := loadImage("flag.png")
+	flag, err := loadImage("images/flag.png")
 	if err != nil {
 		return nil, err
 	}
 
-	mine, err := loadImage("mine.png")
+	mine, err := loadImage("images/mine.png")
 	if err != nil {
 		return nil, err
 	}

@@ -108,6 +108,7 @@ func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
 		menuState:  MenuStateMain,
 		menuItems:  menuItems,
 		animations: make(map[game.Position]cellAnimation),
+		touches:    make(map[ebiten.TouchID]touchInfo),
 
 		customWidth:  10,
 		customHeight: 10,
@@ -206,7 +207,7 @@ func (r *EbitenRenderer) Update() error {
 	// --- Input Handling and Initial Action Sounds ---
 	if !r.game.GameState().IsGameOver {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			if pos, clicked := r.mouseButtonClicked(ebiten.MouseButtonLeft); clicked {
+			if pos, clicked := r.mouseButtonClicked(); clicked {
 				for _, event := range r.game.HandleLeftClick(pos) {
 					switch event.Type {
 					case game.EventExplosion:
@@ -232,7 +233,7 @@ func (r *EbitenRenderer) Update() error {
 			}
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
-			if pos, clicked := r.mouseButtonClicked(ebiten.MouseButtonRight); clicked {
+			if pos, clicked := r.mouseButtonClicked(); clicked {
 				for _, event := range r.game.HandleRightClick(pos) {
 					switch event.Type {
 					case game.EventFlagged:
@@ -248,6 +249,65 @@ func (r *EbitenRenderer) Update() error {
 						}
 					}
 				}
+			}
+		}
+
+		// Touch: record new touches
+		for _, id := range inpututil.JustPressedTouchIDs() {
+			x, y := ebiten.TouchPosition(id)
+			if pos, ok := r.screenToGamePos(x, y); ok {
+				r.touches[id] = touchInfo{pos: pos}
+			}
+		}
+		// Touch: long press → flag
+		for id, t := range r.touches {
+			if !t.consumed && inpututil.TouchPressDuration(id) >= longPressThreshold {
+				t.consumed = true
+				r.touches[id] = t
+				for _, event := range r.game.HandleRightClick(t.pos) {
+					switch event.Type {
+					case game.EventFlagged:
+						if r.audio.flagSound != nil {
+							r.audio.flagSound.Rewind()
+							r.audio.flagSound.Play()
+						}
+					case game.EventUnflagged:
+						if r.audio.unflagSound != nil {
+							r.audio.unflagSound.Rewind()
+							r.audio.unflagSound.Play()
+						}
+					}
+				}
+			}
+		}
+		// Touch: release → reveal
+		for _, id := range inpututil.AppendJustReleasedTouchIDs(nil) {
+			if t, ok := r.touches[id]; ok {
+				if !t.consumed {
+					for _, event := range r.game.HandleLeftClick(t.pos) {
+						switch event.Type {
+						case game.EventExplosion:
+							if r.audio.explodeSound != nil {
+								r.audio.explodeSound.Rewind()
+								r.audio.explodeSound.Play()
+							}
+						case game.EventReveal:
+							if r.audio.initialRevealSound != nil {
+								r.audio.initialRevealSound.Rewind()
+								r.audio.initialRevealSound.Play()
+							}
+							for _, revealedPos := range event.Positions {
+								dist := math.Abs(float64(revealedPos.X-t.pos.X)) + math.Abs(float64(revealedPos.Y-t.pos.Y))
+								delay := time.Duration(dist) * revealDelay
+								r.animations[revealedPos] = cellAnimation{
+									StartTime: time.Now().Add(delay),
+									Duration:  revealAnimate,
+								}
+							}
+						}
+					}
+				}
+				delete(r.touches, id)
 			}
 		}
 	}
@@ -405,24 +465,26 @@ func (r *EbitenRenderer) drawHeader(screen *ebiten.Image) {
 	}
 }
 
-func (r *EbitenRenderer) mouseButtonClicked(button ebiten.MouseButton) (game.Position, bool) {
+func (r *EbitenRenderer) screenToGamePos(x, y int) (game.Position, bool) {
 	if r.game == nil {
 		return game.Position{}, false
 	}
-	x, y := ebiten.CursorPosition()
 	invTransform := r.transform
 	invTransform.Invert()
 	gx, gy := invTransform.Apply(float64(x), float64(y))
-
 	pos := game.Position{
-		X: int(gx) / r.cellSize,
-		Y: int(gy) / r.cellSize,
+		int(gx) / r.cellSize,
+		int(gy) / r.cellSize,
 	}
-
 	if pos.X >= 0 && pos.X < r.game.Width() && pos.Y >= 0 && pos.Y < r.game.Height() {
 		return pos, true
 	}
 	return game.Position{}, false
+}
+
+func (r *EbitenRenderer) mouseButtonClicked() (game.Position, bool) {
+	x, y := ebiten.CursorPosition()
+	return r.screenToGamePos(x, y)
 }
 
 func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position, yOffset int) {

@@ -17,9 +17,12 @@
         const canvas = document.querySelector('canvas');
         if (!canvas || !canvas.width || !canvas.height) return;
         fitting = true;
-        const scale = Math.min(window.innerWidth / canvas.width, window.innerHeight / canvas.height);
-        const w = Math.floor(canvas.width * scale);
-        const h = Math.floor(canvas.height * scale);
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = canvas.width / dpr;
+        const cssH = canvas.height / dpr;
+        const scale = Math.min(window.innerWidth / cssW, window.innerHeight / cssH);
+        const w = Math.floor(cssW * scale);
+        const h = Math.floor(cssH * scale);
         canvas.style.setProperty('width', w + 'px', 'important');
         canvas.style.setProperty('height', h + 'px', 'important');
         canvas.style.setProperty('position', 'absolute', 'important');

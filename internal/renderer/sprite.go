@@ -1,6 +1,8 @@
 package renderer
 
 import (
+	"mines/assets"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
@@ -14,22 +16,22 @@ type Sprites struct {
 
 func LoadSprites() (*Sprites, error) {
 	// load image from file
-	hidden, _, err := ebitenutil.NewImageFromFile("assets/hidden.png")
+	hidden, err := loadImage("hidden.png")
 	if err != nil {
 		return nil, err
 	}
 
-	revealed, _, err := ebitenutil.NewImageFromFile("assets/revealed.png")
+	revealed, err := loadImage("revealed.png")
 	if err != nil {
 		return nil, err
 	}
 
-	flag, _, err := ebitenutil.NewImageFromFile("assets/flag.png")
+	flag, err := loadImage("flag.png")
 	if err != nil {
 		return nil, err
 	}
 
-	mine, _, err := ebitenutil.NewImageFromFile("assets/mine.png")
+	mine, err := loadImage("mine.png")
 	if err != nil {
 		return nil, err
 	}
@@ -40,4 +42,14 @@ func LoadSprites() (*Sprites, error) {
 		flag:     flag,
 		mine:     mine,
 	}, nil
+}
+
+func loadImage(name string) (*ebiten.Image, error) {
+	f, err := assets.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	img, _, err := ebitenutil.NewImageFromReader(f)
+	return img, err
 }

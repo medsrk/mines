@@ -18,65 +18,53 @@ func NewMinesweeper(width, height, mineCount int) *Minesweeper {
 	}
 }
 
-func (ms *Minesweeper) HandleLeftClick(p Position) ([]Position, ClickResultType) {
+func (ms *Minesweeper) HandleLeftClick(p Position) []Event {
 	if ms.gameState.IsGameOver || ms.gameState.HasWon {
-		return nil, ResultNoOp
+		return nil
 	}
 	if ms.grid.states[p.X][p.Y] == StateFlagged {
-		return nil, ResultNoOp
+		return nil
 	}
 
 	if len(ms.grid.mines) == 0 {
 		ms.grid.PlaceMines(ms.mineCount, p)
 	}
 
-	revealed := ms.grid.Reveal(p, p)
+	revealed := ms.grid.Reveal(p)
+	if len(revealed) == 0 {
+		return nil
+	}
 
-	hitMine := false
-	if len(revealed) > 0 {
-		for _, rPos := range revealed {
-			if _, isMine := ms.grid.mines[rPos]; isMine {
-				hitMine = true
-				break
-			}
+	for _, rPos := range revealed {
+		if _, isMine := ms.grid.mines[rPos]; isMine {
+			ms.gameState.IsGameOver = true
+			return []Event{{EventExplosion, []Position{p}}}
 		}
 	}
 
-	if hitMine {
-		ms.gameState.IsGameOver = true
-		return revealed, ResultExplosion
-	}
-
-	if len(revealed) > 0 {
-		return revealed, ResultReveal
-	}
-
-	return nil, ResultNoOp
+	return []Event{{EventReveal, revealed}}
 }
 
-func (ms *Minesweeper) HandleRightClick(p Position) bool {
+func (ms *Minesweeper) HandleRightClick(p Position) []Event {
 	if ms.gameState.IsGameOver || ms.gameState.HasWon {
-		return false
+		return nil
 	}
 
 	posState := ms.grid.states[p.X][p.Y]
-	if posState == StateRevealed {
-		return false
+	switch posState {
+	case StateHidden:
+		ms.grid.ToggleFlag(p)
+		return []Event{{EventFlagged, []Position{p}}}
+	case StateFlagged:
+		ms.grid.ToggleFlag(p)
+		return []Event{{EventUnflagged, []Position{p}}}
 	}
 
-	if posState == StateHidden {
-		ms.grid.ToggleFlag(p)
-		return true
-	} else if posState == StateFlagged {
-		ms.grid.ToggleFlag(p)
-		return true
-	}
-
-	return false
+	return nil
 }
 
-func (ms *Minesweeper) Update() []Position {
-	justFullyRevealed := ms.grid.Update()
+func (ms *Minesweeper) Update() []Event {
+	var events []Event
 
 	if !ms.gameState.IsGameOver && !ms.gameState.StartTime.IsZero() {
 		ms.gameState.ElapsedTime = time.Since(ms.gameState.StartTime)
@@ -86,6 +74,7 @@ func (ms *Minesweeper) Update() []Position {
 		if ms.grid.CheckHasWon() {
 			ms.gameState.HasWon = true
 			ms.gameState.IsGameOver = true
+			events = append(events, Event{Type: EventWon})
 		}
 	}
 
@@ -97,7 +86,7 @@ func (ms *Minesweeper) Update() []Position {
 		}
 	}
 
-	return justFullyRevealed
+	return events
 }
 
 func (ms *Minesweeper) Width() int                        { return ms.grid.width }
@@ -111,6 +100,5 @@ func (ms *Minesweeper) GetCellContent(p Position) CellContent {
 }
 func (ms *Minesweeper) GetAdjacentMines(p Position) int { return ms.grid.GetAdjacentMines(p) }
 func (ms *Minesweeper) GameState() GameState            { return ms.gameState }
-func (ms *Minesweeper) Grid() *Grid                     { return ms.grid }
 func (ms *Minesweeper) MineCount() int                  { return ms.mineCount }
 func (ms *Minesweeper) FlagCount() int                  { return len(ms.grid.flags) }

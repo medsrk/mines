@@ -3,14 +3,16 @@ package renderer
 import (
 	"bytes"
 	"fmt"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"image/color"
 	"io"
 	"log"
+	"math"
+	"mines/assets"
 	"mines/internal/game"
-	"os"
 	"strconv"
 	"time"
+
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/audio"
@@ -53,11 +55,15 @@ var difficulties = []Difficulty{
 	{Name: "Hard", Width: 24, Height: 24, MineCount: 99},
 }
 
-var (
-	customWidth  int = 10
-	customHeight int = 10
-	customMines  int = 10
+const (
+	revealDelay   = 60 * time.Millisecond
+	revealAnimate = 20 * time.Millisecond
 )
+
+type cellAnimation struct {
+	StartTime time.Time
+	Duration  time.Duration
+}
 
 type EbitenRenderer struct {
 	game      game.Game
@@ -76,11 +82,15 @@ type EbitenRenderer struct {
 	explodeSound       *audio.Player
 	winSound           *audio.Player
 
-	prevHasWon bool
+	animations map[game.Position]cellAnimation
+
+	customWidth  int
+	customHeight int
+	customMines  int
 }
 
 func loadSound(audioCtx *audio.Context, path string) *audio.Player {
-	file, err := os.Open(path)
+	file, err := assets.FS.Open(path)
 	if err != nil {
 		log.Printf("Warning: loadSound: failed to open sound file %s: %v", path, err)
 		return nil
@@ -124,12 +134,12 @@ func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
 
 	audioCtx := audio.NewContext(44100)
 
-	tileRevealSound := loadSound(audioCtx, "assets/audio/reveal.ogg")
-	initialRevealSound := loadSound(audioCtx, "assets/audio/click.ogg")
-	flagSound := loadSound(audioCtx, "assets/audio/flag.ogg")
-	unflagSound := loadSound(audioCtx, "assets/audio/unflag.ogg")
-	explodeSound := loadSound(audioCtx, "assets/audio/explode.ogg")
-	winSound := loadSound(audioCtx, "assets/audio/win.ogg")
+	tileRevealSound := loadSound(audioCtx, "audio/reveal.ogg")
+	initialRevealSound := loadSound(audioCtx, "audio/click.ogg")
+	flagSound := loadSound(audioCtx, "audio/flag.ogg")
+	unflagSound := loadSound(audioCtx, "audio/unflag.ogg")
+	explodeSound := loadSound(audioCtx, "audio/explode.ogg")
+	winSound := loadSound(audioCtx, "audio/win.ogg")
 
 	return &EbitenRenderer{
 		game:               g,
@@ -146,7 +156,11 @@ func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
 		unflagSound:        unflagSound,
 		explodeSound:       explodeSound,
 		winSound:           winSound,
-		prevHasWon:         false,
+		animations:         make(map[game.Position]cellAnimation),
+
+		customWidth:  10,
+		customHeight: 10,
+		customMines:  10,
 	}
 }
 
@@ -165,7 +179,6 @@ func (r *EbitenRenderer) Update() error {
 					d := difficulties[i]
 					r.game = game.NewMinesweeper(d.Width, d.Height, d.MineCount)
 					r.menuState = MenuStatePlaying
-					r.prevHasWon = false
 					ebiten.SetWindowSize(d.Width*r.cellSize, d.Height*r.cellSize+headerHeight)
 					winWidth, winHeight := ebiten.Monitor().Size()
 					ebiten.SetWindowPosition((winWidth-d.Width*r.cellSize)/2, (winHeight-d.Height*r.cellSize-headerHeight)/2)
@@ -180,9 +193,9 @@ func (r *EbitenRenderer) Update() error {
 				minValue int
 				maxValue int
 			}{
-				{valuePtr: &customWidth, minValue: 5, maxValue: 50},
-				{valuePtr: &customHeight, minValue: 5, maxValue: 50},
-				{valuePtr: &customMines, minValue: 1, maxValue: customWidth*customHeight - 1},
+				{valuePtr: &r.customWidth, minValue: 5, maxValue: 50},
+				{valuePtr: &r.customHeight, minValue: 5, maxValue: 50},
+				{valuePtr: &r.customMines, minValue: 1, maxValue: r.customWidth*r.customHeight - 1},
 			}
 
 			for i := range rows {
@@ -190,7 +203,7 @@ func (r *EbitenRenderer) Update() error {
 					label string
 					value int
 				}{
-					{"Width:", customWidth}, {"Height:", customHeight}, {"Mines:", customMines},
+					{"Width:", r.customWidth}, {"Height:", r.customHeight}, {"Mines:", r.customMines},
 				}[i]
 				yPos := baseY + i*menuRowSpacing
 				valueStr := fmt.Sprintf("%d", *rows[i].valuePtr)
@@ -224,12 +237,11 @@ func (r *EbitenRenderer) Update() error {
 			startWidth := (bounds.Max.X - bounds.Min.X).Ceil()
 			startX := screenWidth/2 - startWidth/2
 			if x >= startX-10 && x <= startX+startWidth+10 && y >= startY && y <= startY+30 {
-				r.game = game.NewMinesweeper(customWidth, customHeight, customMines)
+				r.game = game.NewMinesweeper(r.customWidth, r.customHeight, r.customMines)
 				r.menuState = MenuStatePlaying
-				r.prevHasWon = false
-				ebiten.SetWindowSize(customWidth*r.cellSize, customHeight*r.cellSize+headerHeight)
+				ebiten.SetWindowSize(r.customWidth*r.cellSize, r.customHeight*r.cellSize+headerHeight)
 				winWidth, winHeight := ebiten.Monitor().Size()
-				ebiten.SetWindowPosition((winWidth-customWidth*r.cellSize)/2, (winHeight-customHeight*r.cellSize-headerHeight)/2)
+				ebiten.SetWindowPosition((winWidth-r.customWidth*r.cellSize)/2, (winHeight-r.customHeight*r.cellSize-headerHeight)/2)
 				return nil
 			}
 		}
@@ -243,63 +255,70 @@ func (r *EbitenRenderer) Update() error {
 	// --- Input Handling and Initial Action Sounds ---
 	if !r.game.GameState().IsGameOver {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			pos, clicked := r.mouseButtonClicked(ebiten.MouseButtonLeft)
-			if clicked {
-				_, clickResult := r.game.HandleLeftClick(pos)
-
-				switch clickResult {
-				case game.ResultExplosion:
-					if r.explodeSound != nil {
-						r.explodeSound.Rewind()
-						r.explodeSound.Play()
-					}
-				case game.ResultReveal:
-					if r.initialRevealSound != nil {
-						r.initialRevealSound.Rewind()
-						r.initialRevealSound.Play()
+			if pos, clicked := r.mouseButtonClicked(ebiten.MouseButtonLeft); clicked {
+				for _, event := range r.game.HandleLeftClick(pos) {
+					switch event.Type {
+					case game.EventExplosion:
+						if r.explodeSound != nil {
+							r.explodeSound.Rewind()
+							r.explodeSound.Play()
+						}
+					case game.EventReveal:
+						if r.initialRevealSound != nil {
+							r.initialRevealSound.Rewind()
+							r.initialRevealSound.Play()
+						}
+						for _, revealedPos := range event.Positions {
+							dist := math.Abs(float64(revealedPos.X-pos.X)) + math.Abs(float64(revealedPos.Y-pos.Y))
+							delay := time.Duration(dist) * revealDelay
+							r.animations[revealedPos] = cellAnimation{
+								StartTime: time.Now().Add(delay),
+								Duration:  revealAnimate,
+							}
+						}
 					}
 				}
 			}
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
-			pos, clicked := r.mouseButtonClicked(ebiten.MouseButtonRight)
-			if clicked {
-				r.game.HandleRightClick(pos)
-				if r.game.GetCellState(pos) == game.StateFlagged {
-					if r.flagSound != nil {
-						r.flagSound.Rewind()
-						r.flagSound.Play()
-					}
-				}
-				if r.game.GetCellState(pos) == game.StateHidden {
-					if r.unflagSound != nil {
-						r.unflagSound.Rewind()
-						r.unflagSound.Play()
+			if pos, clicked := r.mouseButtonClicked(ebiten.MouseButtonRight); clicked {
+				for _, event := range r.game.HandleRightClick(pos) {
+					switch event.Type {
+					case game.EventFlagged:
+						if r.flagSound != nil {
+							r.flagSound.Rewind()
+							r.flagSound.Play()
+						}
+
+					case game.EventUnflagged:
+						if r.unflagSound != nil {
+							r.unflagSound.Rewind()
+							r.unflagSound.Play()
+						}
 					}
 				}
 			}
 		}
 	}
-
-	// --- Game State Update and Per-Tile Animation Sounds ---
-	justFullyRevealed := r.game.Update()
-
-	if r.tileRevealSound != nil {
-		for _, _ = range justFullyRevealed {
-			r.tileRevealSound.Rewind()
-			r.tileRevealSound.Play()
+	for _, event := range r.game.Update() {
+		switch event.Type {
+		case game.EventWon:
+			if r.winSound != nil {
+				r.winSound.Rewind()
+				r.winSound.Play()
+			}
 		}
 	}
-
-	// --- Win Condition Sound ---
-	currentGameState := r.game.GameState()
-	if currentGameState.HasWon && !r.prevHasWon {
-		if r.winSound != nil {
-			r.winSound.Rewind()
-			r.winSound.Play()
+	now := time.Now()
+	for p, anim := range r.animations {
+		if now.Sub(anim.StartTime) >= anim.Duration {
+			delete(r.animations, p)
+			if r.tileRevealSound != nil {
+				r.tileRevealSound.Rewind()
+				r.tileRevealSound.Play()
+			}
 		}
 	}
-	r.prevHasWon = currentGameState.HasWon
 
 	// --- Reset Game ---
 	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
@@ -307,6 +326,7 @@ func (r *EbitenRenderer) Update() error {
 		ebiten.SetWindowSize(1280, 720)
 		winWidth, winHeight := ebiten.Monitor().Size()
 		ebiten.SetWindowPosition((winWidth-1280)/2, (winHeight-720)/2)
+		r.animations = make(map[game.Position]cellAnimation)
 		r.game = nil
 	}
 
@@ -359,7 +379,7 @@ func (r *EbitenRenderer) drawMenu(screen *ebiten.Image) {
 		label string
 		value int
 	}{
-		{"Width:", customWidth}, {"Height:", customHeight}, {"Mines:", customMines},
+		{"Width:", r.customWidth}, {"Height:", r.customHeight}, {"Mines:", r.customMines},
 	} {
 		y := baseY + i*menuRowSpacing
 		valueStr := fmt.Sprintf("%d", field.value)
@@ -461,21 +481,16 @@ func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position, yOffs
 	scale := float32(1.0)
 	state := r.game.GetCellState(pos)
 
-	if state == game.StateRevealing {
-		if anim, exists := r.game.Grid().GetAnimation(pos); exists {
-			elapsed := time.Since(anim.StartTime)
-			if elapsed >= 0 {
-				progress := float64(elapsed) / float64(anim.Duration)
-				if progress < 0 {
-					progress = 0
-				}
-				if progress > 1.0 {
-					progress = 1.0
-				}
-				scale = float32(0.5 + 0.5*progress)
-			} else {
-				scale = 0.5
+	if anim, animating := r.animations[pos]; animating {
+		elapsed := time.Since(anim.StartTime)
+		if elapsed < 0 {
+			scale = 0.5
+		} else {
+			progress := float64(elapsed) / float64(anim.Duration)
+			if progress > 1.0 {
+				progress = 1.0
 			}
+			scale = float32(0.5 + 0.5*progress)
 		}
 	}
 
@@ -495,23 +510,27 @@ func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position, yOffs
 	op.GeoM.Translate(float64(drawX), float64(drawY))
 
 	switch state {
-	case game.StateHidden, game.StateRevealing:
+	case game.StateHidden:
 		screen.DrawImage(r.sprites.hidden, op)
 	case game.StateRevealed:
-		screen.DrawImage(r.sprites.revealed, op)
-		if r.game.GetCellContent(pos) == game.ContentMine {
-			screen.DrawImage(r.sprites.mine, op)
+		if _, animating := r.animations[pos]; animating {
+			screen.DrawImage(r.sprites.hidden, op)
 		} else {
-			mineCount := r.game.GetAdjacentMines(pos)
-			if mineCount > 0 {
-				numberStr := strconv.Itoa(mineCount)
-				bounds, _ := font.BoundString(r.font, numberStr)
-				textWidth := (bounds.Max.X - bounds.Min.X).Ceil()
-				textHeight := (bounds.Max.Y - bounds.Min.Y).Ceil()
+			screen.DrawImage(r.sprites.revealed, op)
+			if r.game.GetCellContent(pos) == game.ContentMine {
+				screen.DrawImage(r.sprites.mine, op)
+			} else {
+				mineCount := r.game.GetAdjacentMines(pos)
+				if mineCount > 0 {
+					numberStr := strconv.Itoa(mineCount)
+					bounds, _ := font.BoundString(r.font, numberStr)
+					textWidth := (bounds.Max.X - bounds.Min.X).Ceil()
+					textHeight := (bounds.Max.Y - bounds.Min.Y).Ceil()
 
-				textX := int(xPos) + (r.cellSize-textWidth)/2
-				textY := int(yPos) + (r.cellSize+textHeight)/2
-				text.Draw(screen, numberStr, r.font, textX, textY, numberColours[mineCount])
+					textX := int(xPos) + (r.cellSize-textWidth)/2
+					textY := int(yPos) + (r.cellSize+textHeight)/2
+					text.Draw(screen, numberStr, r.font, textX, textY, numberColours[mineCount])
+				}
 			}
 		}
 	case game.StateFlagged:

@@ -11,7 +11,6 @@ type CellState int
 const (
 	StateHidden CellState = iota
 	StateRevealed
-	StateRevealing
 	StateFlagged
 )
 
@@ -29,13 +28,20 @@ type GameState struct {
 	ElapsedTime time.Duration
 }
 
-type ClickResultType int
+type EventType int
 
 const (
-	ResultNoOp   ClickResultType = iota
-	ResultReveal                 // Sound for initial reveal action
-	ResultExplosion
+	EventReveal EventType = iota
+	EventExplosion
+	EventFlagged
+	EventUnflagged
+	EventWon
 )
+
+type Event struct {
+	Type      EventType
+	Positions []Position
+}
 
 type Game interface {
 	Width() int
@@ -45,16 +51,10 @@ type Game interface {
 	GetAdjacentMines(Position) int
 	GameState() GameState
 
-	HandleLeftClick(Position) ([]Position, ClickResultType)
-	HandleRightClick(Position) bool
+	HandleLeftClick(Position) []Event
+	HandleRightClick(Position) []Event
 
-	Update() []Position
-	Grid() *Grid
+	Update() []Event
 	MineCount() int
 	FlagCount() int
-}
-
-type Animation struct {
-	StartTime time.Time
-	Duration  time.Duration
 }

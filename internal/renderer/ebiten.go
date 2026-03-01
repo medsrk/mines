@@ -124,8 +124,18 @@ func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
 
 func (r *EbitenRenderer) Update() error {
 	if r.menuState == MenuStateMain {
+		var clickX, clickY int
+		var hasClick bool
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			x, y := ebiten.CursorPosition()
+			clickX, clickY = ebiten.CursorPosition()
+			hasClick = true
+		}
+		if ids := inpututil.JustPressedTouchIDs(); len(ids) > 0 {
+			clickX, clickY = ebiten.TouchPosition(ids[0])
+			hasClick = true
+		}
+		if hasClick {
+			x, y := clickX, clickY
 			cx := r.screenW / 2
 			sy := float64(r.screenH) / 720.0
 

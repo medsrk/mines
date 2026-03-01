@@ -5,13 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         * { margin: 0; padding: 0; }
-        body { background: #000; overflow: hidden; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
-        canvas { max-width: 100vw; max-height: 100vh; }
+        body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
     </style>
     <script src="wasm_exec.js"></script>
 </head>
 <body>
 <script>
+    let fitting = false;
+    function fitCanvas() {
+        if (fitting) return;
+        const canvas = document.querySelector('canvas');
+        if (!canvas || !canvas.width || !canvas.height) return;
+        fitting = true;
+        const scale = Math.min(window.innerWidth / canvas.width, window.innerHeight / canvas.height);
+        const w = Math.floor(canvas.width * scale);
+        const h = Math.floor(canvas.height * scale);
+        canvas.style.setProperty('width', w + 'px', 'important');
+        canvas.style.setProperty('height', h + 'px', 'important');
+        canvas.style.setProperty('position', 'absolute', 'important');
+        canvas.style.setProperty('left', Math.floor((window.innerWidth - w) / 2) + 'px', 'important');
+        canvas.style.setProperty('top', Math.floor((window.innerHeight - h) / 2) + 'px', 'important');
+        setTimeout(() => { fitting = false; }, 16);
+    }
+    const interval = setInterval(() => {
+        const canvas = document.querySelector('canvas');
+        if (canvas) {
+            clearInterval(interval);
+            fitCanvas();
+            new MutationObserver(fitCanvas).observe(canvas, { attributes: true });
+            window.addEventListener('resize', fitCanvas);
+        }
+    }, 50);
+
     const go = new Go();
     WebAssembly.instantiateStreaming(fetch("game.wasm"), go.importObject).then(r => go.run(r.instance));
 </script>

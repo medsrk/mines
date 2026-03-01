@@ -79,6 +79,9 @@ type EbitenRenderer struct {
 	animations map[game.Position]cellAnimation
 	touches    map[ebiten.TouchID]touchInfo
 
+	screenW int
+	screenH int
+
 	customWidth  int
 	customHeight int
 	customMines  int
@@ -110,6 +113,9 @@ func NewEbitenRenderer(g game.Game, cellSize int) *EbitenRenderer {
 		animations: make(map[game.Position]cellAnimation),
 		touches:    make(map[ebiten.TouchID]touchInfo),
 
+		screenW: 1280,
+		screenH: 720,
+
 		customWidth:  10,
 		customHeight: 10,
 		customMines:  10,
@@ -120,13 +126,15 @@ func (r *EbitenRenderer) Update() error {
 	if r.menuState == MenuStateMain {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			x, y := ebiten.CursorPosition()
+			cx := r.screenW / 2
+			sy := float64(r.screenH) / 720.0
 
 			// Handle preset difficulty selection
 			for i, item := range r.menuItems {
 				bounds, _ := font.BoundString(r.font, item)
 				width := (bounds.Max.X - bounds.Min.X).Ceil()
-				itemX := screenWidth/2 - width/2
-				itemY := 200 + i*50
+				itemX := cx - width/2
+				itemY := int(float64(200+i*50) * sy)
 				if x >= itemX && x <= itemX+width && y >= itemY-20 && y <= itemY+20 {
 					d := difficulties[i]
 					r.game = game.NewMinesweeper(d.Width, d.Height, d.MineCount)
@@ -139,7 +147,8 @@ func (r *EbitenRenderer) Update() error {
 			}
 
 			// Handle custom settings buttons
-			baseY := 200 + len(difficulties)*50 + 30
+			baseY := int(float64(200+len(difficulties)*50+30) * sy)
+			rowSpacing := int(float64(menuRowSpacing) * sy)
 			rows := []struct {
 				valuePtr *int
 				minValue int
@@ -157,14 +166,14 @@ func (r *EbitenRenderer) Update() error {
 				}{
 					{"Width:", r.customWidth}, {"Height:", r.customHeight}, {"Mines:", r.customMines},
 				}[i]
-				yPos := baseY + i*menuRowSpacing
+				yPos := baseY + i*rowSpacing
 				valueStr := fmt.Sprintf("%d", *rows[i].valuePtr)
 				bounds, _ := font.BoundString(r.font, field.label)
 				labelWidth := (bounds.Max.X - bounds.Min.X).Ceil()
 				bounds, _ = font.BoundString(r.font, valueStr)
 				valueWidth := (bounds.Max.X - bounds.Min.X).Ceil()
 				totalWidth := labelWidth + menuButtonPadding + valueWidth + menuButtonPadding + menuButtonSize*2 + menuButtonPadding
-				labelX := screenWidth/2 - totalWidth/2
+				labelX := cx - totalWidth/2
 				minusX := labelX + labelWidth + menuButtonPadding + valueWidth + menuButtonPadding
 				plusX := minusX + menuButtonSize + menuButtonPadding
 
@@ -183,11 +192,11 @@ func (r *EbitenRenderer) Update() error {
 			}
 
 			// Start button
-			startY := baseY + 3*menuRowSpacing
+			startY := baseY + 3*rowSpacing
 			startText := "Start Custom Game"
 			bounds, _ := font.BoundString(r.font, startText)
 			startWidth := (bounds.Max.X - bounds.Min.X).Ceil()
-			startX := screenWidth/2 - startWidth/2
+			startX := cx - startWidth/2
 			if x >= startX-10 && x <= startX+startWidth+10 && y >= startY && y <= startY+30 {
 				r.game = game.NewMinesweeper(r.customWidth, r.customHeight, r.customMines)
 				r.menuState = MenuStatePlaying
@@ -373,33 +382,36 @@ const (
 
 func (r *EbitenRenderer) drawMenu(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{30, 30, 30, 255})
-	// Draw menu title
+	cx := r.screenW / 2
+	sy := float64(r.screenH) / 720.0
 
+	// Draw menu title
 	bounds, _ := font.BoundString(r.font, menuText)
-	text.Draw(screen, menuText, r.font, screenWidth/2-(bounds.Max.X-bounds.Min.X).Ceil()/2, 100, color.White)
+	text.Draw(screen, menuText, r.font, cx-(bounds.Max.X-bounds.Min.X).Ceil()/2, int(100*sy), color.White)
 
 	// Draw preset difficulty options
 	for i, item := range r.menuItems {
 		bounds, _ := font.BoundString(r.font, item)
-		text.Draw(screen, item, r.font, screenWidth/2-(bounds.Max.X-bounds.Min.X).Ceil()/2, 200+i*50, color.White)
+		text.Draw(screen, item, r.font, cx-(bounds.Max.X-bounds.Min.X).Ceil()/2, int(float64(200+i*50)*sy), color.White)
 	}
 
 	// Calculate base Y dynamically
-	baseY := 200 + len(difficulties)*50 + 30
+	baseY := int(float64(200+len(difficulties)*50+30) * sy)
+	rowSpacing := int(float64(menuRowSpacing) * sy)
 	for i, field := range []struct {
 		label string
 		value int
 	}{
 		{"Width:", r.customWidth}, {"Height:", r.customHeight}, {"Mines:", r.customMines},
 	} {
-		y := baseY + i*menuRowSpacing
+		y := baseY + i*rowSpacing
 		valueStr := fmt.Sprintf("%d", field.value)
 		bounds, _ := font.BoundString(r.font, field.label)
 		labelWidth := (bounds.Max.X - bounds.Min.X).Ceil()
 		bounds, _ = font.BoundString(r.font, valueStr)
 		valueWidth := (bounds.Max.X - bounds.Min.X).Ceil()
 		totalWidth := labelWidth + menuButtonPadding + valueWidth + menuButtonPadding + menuButtonSize*2 + menuButtonPadding
-		labelX := screenWidth/2 - totalWidth/2
+		labelX := cx - totalWidth/2
 
 		text.Draw(screen, field.label, r.font, labelX, y+15, color.White)
 		text.Draw(screen, valueStr, r.font, labelX+labelWidth+menuButtonPadding, y+15, color.White)
@@ -412,18 +424,20 @@ func (r *EbitenRenderer) drawMenu(screen *ebiten.Image) {
 	}
 
 	// Draw Start button
-	startY := baseY + 3*menuRowSpacing
+	startY := baseY + 3*rowSpacing
 	startText := "Start Custom Game"
 	bounds, _ = font.BoundString(r.font, startText)
 	startWidth := (bounds.Max.X - bounds.Min.X).Ceil()
-	startX := screenWidth/2 - startWidth/2
+	startX := cx - startWidth/2
 	vector.DrawFilledRect(screen, float32(startX)-10, float32(startY), float32(startWidth)+20, 30, color.RGBA{50, 150, 50, 255}, false)
 	text.Draw(screen, startText, r.font, startX, startY+20, color.White)
 }
 
 func (r *EbitenRenderer) Layout(w, h int) (int, int) {
+	r.screenW = w
+	r.screenH = h
 	if r.menuState == MenuStateMain || r.game == nil {
-		return 1280, 720
+		return w, h
 	}
 	return r.game.Width() * r.cellSize,
 		r.game.Height()*r.cellSize + headerHeight

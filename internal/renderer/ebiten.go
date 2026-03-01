@@ -223,6 +223,22 @@ func (r *EbitenRenderer) Update() error {
 		return nil
 	}
 
+	// Reset button
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		x, y := ebiten.CursorPosition()
+		if r.isResetButton(x, y) {
+			r.resetGame()
+			return nil
+		}
+	}
+	for _, id := range inpututil.JustPressedTouchIDs() {
+		x, y := ebiten.TouchPosition(id)
+		if r.isResetButton(x, y) {
+			r.resetGame()
+			return nil
+		}
+	}
+
 	// --- Input Handling and Initial Action Sounds ---
 	if !r.game.GameState().IsGameOver {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -473,20 +489,23 @@ func (r *EbitenRenderer) drawHeader(screen *ebiten.Image) {
 	timeWidth := (bounds.Max.X - bounds.Min.X).Ceil()
 	text.Draw(screen, timeStr, r.font, width-timeWidth-20, headerHeight/2+6, color.White)
 
+	// Reset button (smiley face)
+	const btnSize = 36
+	btnX := width/2 - btnSize/2
+	btnY := (headerHeight - btnSize) / 2
+	vector.DrawFilledRect(screen, float32(btnX), float32(btnY), btnSize, btnSize, color.RGBA{180, 180, 180, 255}, false)
+	face := ":)"
 	if state.IsGameOver {
-		var textStr string
-		var col color.Color
 		if state.HasWon {
-			textStr = winText
-			col = winColor
+			face = ":D"
 		} else {
-			textStr = gameOverText
-			col = gameOverColor
+			face = ":("
 		}
-		bounds, _ := font.BoundString(r.font, textStr)
-		textWidth := (bounds.Max.X - bounds.Min.X).Ceil()
-		text.Draw(screen, textStr, r.font, width/2-textWidth/2, headerHeight/2+6, col)
 	}
+	bounds, _ = font.BoundString(r.font, face)
+	faceW := (bounds.Max.X - bounds.Min.X).Ceil()
+	midY := ((bounds.Min.Y + bounds.Max.Y) / 2).Round()
+	text.Draw(screen, face, r.font, btnX+(btnSize-faceW)/2, btnY+btnSize/2-midY, color.RGBA{0, 0, 0, 255})
 }
 
 func (r *EbitenRenderer) screenToGamePos(x, y int) (game.Position, bool) {
@@ -509,6 +528,24 @@ func (r *EbitenRenderer) screenToGamePos(x, y int) (game.Position, bool) {
 func (r *EbitenRenderer) mouseButtonClicked() (game.Position, bool) {
 	x, y := ebiten.CursorPosition()
 	return r.screenToGamePos(x, y)
+}
+
+func (r *EbitenRenderer) isResetButton(x, y int) bool {
+	if r.game == nil {
+		return false
+	}
+	w := r.game.Width() * r.cellSize
+	const btnSize = 36
+	btnX := w/2 - btnSize/2
+	btnY := (headerHeight - btnSize) / 2
+	return x >= btnX && x <= btnX+btnSize && y >= btnY && y <= btnY+btnSize
+}
+
+func (r *EbitenRenderer) resetGame() {
+	w, h, m := r.game.Width(), r.game.Height(), r.game.MineCount()
+	r.game = game.NewMinesweeper(w, h, m)
+	r.animations = make(map[game.Position]cellAnimation)
+	r.touches = make(map[ebiten.TouchID]touchInfo)
 }
 
 func (r *EbitenRenderer) drawCell(screen *ebiten.Image, pos game.Position, yOffset int) {

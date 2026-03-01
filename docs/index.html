@@ -12,7 +12,15 @@
 <body>
 <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("game.wasm"), go.importObject).then(r => go.run(r.instance));
+    (async () => {
+        const resp = await fetch("game.wasm.gz");
+        const stream = resp.body.pipeThrough(new DecompressionStream("gzip"));
+        const result = await WebAssembly.instantiateStreaming(
+            new Response(stream, { headers: { "Content-Type": "application/wasm" } }),
+            go.importObject
+        );
+        go.run(result.instance);
+    })();
 </script>
 </body>
 </html>

@@ -1,11 +1,19 @@
+<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; }
+        body { background: #000; overflow: hidden; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        canvas { max-width: 100vw; max-height: 100vh; }
+    </style>
     <script src="wasm_exec.js"></script>
 </head>
-
-<body><script>
+<body>
+<script>
     const go = new Go();
     WebAssembly.instantiateStreaming(fetch("game.wasm"), go.importObject).then(r => go.run(r.instance));
-</script></body>
+</script>
+</body>
 </html>
